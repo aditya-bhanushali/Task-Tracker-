@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { PRIORITY, PRIORITY_ORDER, STATUS, STATUS_ORDER } from '../constants'
 import { validateField, validateForm, TITLE_MAX, DESCRIPTION_MAX } from '../utils/validation'
-import { todayISO } from '../utils/date'
+import { todayISO, cleanDateStr } from '../utils/date'
 import { XIcon, AlertIcon } from './icons'
 
 const EMPTY_FORM = {
@@ -40,7 +40,7 @@ export default function TaskForm({ isOpen, onClose, onSubmit, editingTask }) {
           ? {
               title: editingTask.title,
               description: editingTask.description || '',
-              dueDate: editingTask.dueDate,
+              dueDate: cleanDateStr(editingTask.dueDate),
               priority: editingTask.priority,
               status: editingTask.status,
             }

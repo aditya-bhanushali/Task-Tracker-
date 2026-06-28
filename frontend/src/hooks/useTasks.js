@@ -1,143 +1,169 @@
-import { useCallback } from 'react'
-import { useLocalStorageState } from './useLocalStorageState'
-import { STORAGE_KEY, PRIORITY, STATUS } from '../constants'
-import { toISODate } from '../utils/date'
+import { useState, useEffect, useCallback } from 'react'
+import { STATUS } from '../constants'
 
-function generateId() {
-  return `task_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`
-}
+const API_URL = 'http://localhost:5000/api/tasks'
 
-function daysFromNow(n) {
-  const d = new Date()
-  d.setDate(d.getDate() + n)
-  return toISODate(d)
-}
+// Helper to map MongoDB _id to frontend id
+const mapTask = (task) => {
+  if (!task) return task;
+  return {
+    ...task,
+    id: task._id,
+  };
+};
 
-// Seed data gives the app something to show on first load instead of a
-// totally blank slate, while still demonstrating every priority/status
-// combination and the empty-state path (delete them all to see it).
-const SEED_TASKS = [
-  {
-    id: generateId(),
-    title: 'Design onboarding flow wireframes',
-    description: 'Sketch the first-run experience for new users, focusing on the empty-state screens.',
-    dueDate: daysFromNow(2),
-    priority: PRIORITY.HIGH,
-    status: STATUS.IN_PROGRESS,
-    createdAt: Date.now() - 86400000 * 3,
-  },
-  {
-    id: generateId(),
-    title: 'Fix WhatsApp webhook timeout',
-    description: 'Calls are timing out after 10s under load. Check the connection pool size.',
-    dueDate: daysFromNow(0),
-    priority: PRIORITY.HIGH,
-    status: STATUS.TODO,
-    createdAt: Date.now() - 86400000 * 2,
-  },
-  {
-    id: generateId(),
-    title: 'Write API docs for v1 endpoints',
-    description: '',
-    dueDate: daysFromNow(5),
-    priority: PRIORITY.MEDIUM,
-    status: STATUS.TODO,
-    createdAt: Date.now() - 86400000,
-  },
-  {
-    id: generateId(),
-    title: 'Refactor TaskCard component',
-    description: 'Split inline edit logic out into a separate hook for reuse in the board view.',
-    dueDate: daysFromNow(-1),
-    priority: PRIORITY.MEDIUM,
-    status: STATUS.IN_PROGRESS,
-    createdAt: Date.now() - 3600000 * 12,
-  },
-  {
-    id: generateId(),
-    title: 'Update dependencies',
-    description: '',
-    dueDate: daysFromNow(7),
-    priority: PRIORITY.LOW,
-    status: STATUS.COMPLETED,
-    createdAt: Date.now() - 3600000 * 30,
-  },
-]
-
-/**
- * Owns the task list and every mutation against it. Components never touch
- * localStorage directly — they call these functions and re-render off the
- * returned `tasks` array. Keeping this separate from UI makes it trivial to
- * later swap the underlying persistence for a real API (same call shapes).
- */
 export function useTasks() {
-  const [tasks, setTasks] = useLocalStorageState(STORAGE_KEY, SEED_TASKS)
+  const [tasks, setTasks] = useState([])
+
+  // Fetch all tasks from backend on mount
+  useEffect(() => {
+    const fetchTasks = async () => {
+      try {
+        const response = await fetch(API_URL)
+        if (!response.ok) {
+          throw new Error('Failed to fetch tasks')
+        }
+        const data = await response.json()
+        setTasks(data.map(mapTask))
+      } catch (error) {
+        console.error('Error loading tasks from backend:', error)
+      }
+    }
+    fetchTasks()
+  }, [])
 
   const addTask = useCallback(
-    (taskData) => {
-      const newTask = {
-        id: generateId(),
-        createdAt: Date.now(),
-        ...taskData,
+    async (taskData) => {
+      try {
+        const response = await fetch(API_URL, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(taskData),
+        })
+
+        if (!response.ok) {
+          const errData = await response.json()
+          throw new Error(errData.message || 'Failed to add task')
+        }
+
+        const newTask = await response.json()
+        const mapped = mapTask(newTask)
+        setTasks((prev) => [mapped, ...prev])
+        return mapped
+      } catch (error) {
+        console.error('Error adding task:', error)
+        throw error
       }
-      setTasks((prev) => [newTask, ...prev])
-      return newTask
     },
-    [setTasks]
+    []
   )
 
   const updateTask = useCallback(
-    (id, updates) => {
-      setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, ...updates } : t)))
+    async (id, updates) => {
+      try {
+        const response = await fetch(`${API_URL}/${id}`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(updates),
+        })
+
+        if (!response.ok) {
+          const errData = await response.json()
+          throw new Error(errData.message || 'Failed to update task')
+        }
+
+        const updated = await response.json()
+        const mapped = mapTask(updated)
+        setTasks((prev) => prev.map((t) => (t.id === id ? mapped : t)))
+      } catch (error) {
+        console.error('Error updating task:', error)
+        throw error
+      }
     },
-    [setTasks]
+    []
   )
 
   const deleteTask = useCallback(
-    (id) => {
-      setTasks((prev) => prev.filter((t) => t.id !== id))
+    async (id) => {
+      try {
+        const response = await fetch(`${API_URL}/${id}`, {
+          method: 'DELETE',
+        })
+
+        if (!response.ok) {
+          const errData = await response.json()
+          throw new Error(errData.message || 'Failed to delete task')
+        }
+
+        setTasks((prev) => prev.filter((t) => t.id !== id))
+      } catch (error) {
+        console.error('Error deleting task:', error)
+        throw error
+      }
     },
-    [setTasks]
+    []
   )
 
-  // Used by the Undo toast action — re-inserts a previously deleted task
-  // at its original position rather than just at the top of the list.
   const restoreTask = useCallback(
-    (task, originalIndex) => {
-      setTasks((prev) => {
-        const next = [...prev]
-        const safeIndex = Math.min(originalIndex, next.length)
-        next.splice(safeIndex, 0, task)
-        return next
-      })
+    async (task, originalIndex) => {
+      try {
+        // Strip out ID properties so backend treats it as a new task
+        const { id, _id, createdAt, updatedAt, ...rest } = task
+        const response = await fetch(API_URL, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(rest),
+        })
+
+        if (!response.ok) {
+          throw new Error('Failed to restore task')
+        }
+
+        const restored = await response.json()
+        const mapped = mapTask(restored)
+
+        setTasks((prev) => {
+          const next = [...prev]
+          const safeIndex = Math.min(originalIndex, next.length)
+          next.splice(safeIndex, 0, mapped)
+          return next
+        })
+      } catch (error) {
+        console.error('Error restoring task:', error)
+      }
     },
-    [setTasks]
+    []
   )
 
   const toggleStatus = useCallback(
-    (id) => {
-      setTasks((prev) =>
-        prev.map((t) => {
-          if (t.id !== id) return t
-          return { ...t, status: t.status === STATUS.COMPLETED ? STATUS.TODO : STATUS.COMPLETED }
-        })
-      )
+    async (id) => {
+      const task = tasks.find((t) => t.id === id)
+      if (!task) return
+
+      const newStatus = task.status === STATUS.COMPLETED ? STATUS.TODO : STATUS.COMPLETED
+      await updateTask(id, { status: newStatus })
     },
-    [setTasks]
+    [tasks, updateTask]
   )
 
   const setPriority = useCallback(
-    (id, priority) => {
-      setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, priority } : t)))
+    async (id, priority) => {
+      await updateTask(id, { priority })
     },
-    [setTasks]
+    [updateTask]
   )
 
   const setStatus = useCallback(
-    (id, status) => {
-      setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, status } : t)))
+    async (id, status) => {
+      await updateTask(id, { status })
     },
-    [setTasks]
+    [updateTask]
   )
 
   return { tasks, addTask, updateTask, deleteTask, restoreTask, toggleStatus, setPriority, setStatus }

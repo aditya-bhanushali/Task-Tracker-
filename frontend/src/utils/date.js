@@ -15,23 +15,30 @@ export function toISODate(date) {
   return `${year}-${month}-${day}`
 }
 
+export function cleanDateStr(dateStr) {
+  if (!dateStr) return ''
+  return dateStr.includes('T') ? dateStr.split('T')[0] : dateStr
+}
+
 /** True if the given YYYY-MM-DD string is strictly before today (local time). */
 export function isPastDate(isoDate) {
-  if (!isoDate) return false
-  return isoDate < todayISO()
+  const clean = cleanDateStr(isoDate)
+  if (!clean) return false
+  return clean < todayISO()
 }
 
 /** True if the given YYYY-MM-DD string is today. */
 export function isToday(isoDate) {
-  return isoDate === todayISO()
+  return cleanDateStr(isoDate) === todayISO()
 }
 
 /** Human-friendly relative label: "Today", "Tomorrow", "In 3 days", "3 days overdue". */
 export function formatDueLabel(isoDate) {
-  if (!isoDate) return ''
+  const clean = cleanDateStr(isoDate)
+  if (!clean) return ''
   const today = new Date()
   today.setHours(0, 0, 0, 0)
-  const due = new Date(isoDate + 'T00:00:00')
+  const due = new Date(clean + 'T00:00:00')
   const diffDays = Math.round((due - today) / 86400000)
 
   if (diffDays === 0) return 'Today'
@@ -44,7 +51,8 @@ export function formatDueLabel(isoDate) {
 }
 
 export function formatFullDate(isoDate) {
-  if (!isoDate) return ''
-  const due = new Date(isoDate + 'T00:00:00')
+  const clean = cleanDateStr(isoDate)
+  if (!clean) return ''
+  const due = new Date(clean + 'T00:00:00')
   return due.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })
 }
