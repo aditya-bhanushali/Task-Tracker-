@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { STATUS } from '../constants'
 
-const API_URL = 'http://localhost:5000/api/tasks'
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api/tasks'
 
 // Helper to map MongoDB _id to frontend id
 const mapTask = (task) => {
